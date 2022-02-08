@@ -7,6 +7,7 @@ import (
 )
 
 type dayOff struct {
+	// userID    string
 	name      string
 	surname   string
 	startDate date
