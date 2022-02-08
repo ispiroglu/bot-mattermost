@@ -1,10 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -21,8 +17,8 @@ type Plugin struct {
 }
 
 const (
-	botUserName    = "bilisim_hr"
-	botDisplayName = "bilisim_hr"
+	botUserName    = "bilisim"
+	botDisplayName = "bilisim"
 
 	// MatterpollPostType = "custom_matterpoll"
 )
@@ -36,6 +32,18 @@ func (p *Plugin) OnActivate() error {
 		Username:    botUserName,
 		DisplayName: botDisplayName,
 	}
+	/*
+		{
+			x, err := p.MattermostPlugin.API.GetUserByUsername("bilisim")
+			if err != nil {
+				p.MattermostPlugin.API.LogError(err.Error())
+			}
+			err = p.MattermostPlugin.API.PermanentDeleteBot(x.Id)
+			if err != nil {
+				p.MattermostPlugin.API.LogError(err.Error())
+			}
+		} */
+
 	botUserID, appErr := p.MattermostPlugin.API.CreateBot(bot)
 	if appErr != nil {
 		return errors.Wrapf(appErr, "failed to create bot.")
@@ -112,20 +120,8 @@ func (p *Plugin) ExecuteHelloCommand(c *plugin.Context, args *model.CommandArgs)
 	}
 	return resp, nil
 }
-func JSONMarshal(t interface{}) *bytes.Buffer {
-	bf := bytes.NewBuffer([]byte{})
-	jsonEncoder := json.NewEncoder(bf)
-	jsonEncoder.SetEscapeHTML(false)
-	err := jsonEncoder.Encode(t)
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-	fmt.Println("IN json", bf.String())
-	return bf
-}
 
 func (p *Plugin) ExecuteDayOffCommand(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
-	// siteURL := p.GetSiteURL()
 	input := strings.TrimSpace(strings.TrimPrefix(args.Command, "/"+triggerDayOff))
 
 	if input == "" || input == "help" {
@@ -135,75 +131,79 @@ func (p *Plugin) ExecuteDayOffCommand(c *plugin.Context, args *model.CommandArgs
 		}, nil
 	}
 	dayOffRequest := getDayOffRequest(input) // TODO: dayOff formatı kontrol edilecek
-	fmt.Println(dayOffRequest.toString())
+	dayOffRequest.userID = args.UserId
 	resp := &model.CommandResponse{
 		ResponseType: model.CommandResponseTypeEphemeral,
 		Text:         "İzin talebiniz başarı ile sisteme girilmiştir.",
 	}
 
-	ch, _ := p.MattermostPlugin.API.GetDirectChannel(p.botUserID, args.UserId)
-	post := model.Post{
-		ChannelId: ch.Id,
-		UserId:    p.botUserID,
-		Message:   "selamlar",
-	}
-	if err := p.MattermostPlugin.API.SendEphemeralPost(args.UserId, &post); err != nil {
-		p.MattermostPlugin.API.LogError("Could'n send ephemeral post inside bicicic")
-	}
+	/*
+		- Talep gönderici
+		- Talebin onaylanıp onaylanmadığını kontrol eden routine
+	*/
+	// ch := make(chan dayOff)
 
-	copy := post.Clone()
-	copy.StripActionIntegrations()
-
-	fmt.Println(copy)
-	hreps, err := http.Post("http://localhost:8065/hooks/ooce1nmw6i8tdqgxdu1tkqu3gw", "application/json",
-		JSONMarshal(copy))
-	if err != nil {
-		p.MattermostPlugin.API.LogError(err.Error())
-	}
-
-	defer hreps.Body.Close()
-
-	body, err := ioutil.ReadAll(hreps.Body)
-	if err != nil {
-		p.MattermostPlugin.API.LogError(err.Error())
-	}
-	p.MattermostPlugin.API.LogInfo("RESP BODY ---", string(body))
-
-	/*defer func() { // Gonderilmeyebilir.
-
-		if err := p.MattermostPlugin.API.SendEphemeralPost(args.UserId, &post); err != nil {
-			p.MattermostPlugin.API.LogError("Could'n send ephemeral post inside bicicic")
-		}
-	}()*/ /*
-		go func() {
-			var reactions []*model.Reaction
-			var err *model.AppError
-			reactions, err = p.MattermostPlugin.API.GetReactions(post.Id)
-
-			if err != nil {
-				p.MattermostPlugin.API.LogError(err.Message, "Couldn't get plugins.")
-			}
-
-			for len(reactions) == 0 {
-				reactions, err = p.MattermostPlugin.API.GetReactions(post.Id)
-				if err != nil {
-					p.MattermostPlugin.API.LogError(err.Message, "Couldn't get plugins.")
-				}
-			}
-
-			if reactions[0].EmojiName == "while_check_mark" {
-				post2 := model.Post{
-					ChannelId: args.ChannelId,
-					UserId:    p.botUserID,
-					Message:   "dayOffRequest.toString()",
-				}
-				if err := p.MattermostPlugin.API.SendEphemeralPost(args.UserId, &post2); err != nil {
-					p.MattermostPlugin.API.LogError("Could'n send ephemeral post inside bicicic")
-				}
-			}
-		}()*/
+	p.sendOffReqToAdmin(dayOffRequest)
+	// go p.lookingForReaction(postID, dayOffRequest)
 
 	return resp, nil
+}
+
+// for ok := true; ok; ok = EXPR { }
+/*
+func (p *Plugin) lookingForReaction(postID string, off dayOff) {
+	var reactions []model.Reaction
+	for ok := true; ok; {
+		p.API.LogInfo("Hala reaction bekliyorum. ")
+		reactions, appErr := p.API.GetReactions(postID)
+		if appErr != nil {
+			p.API.LogError(appErr.Error())
+			return
+		}
+		if len(reactions) > 0 {
+			ok = false
+		}
+	}
+
+	dm, _ := p.MattermostPlugin.API.GetDirectChannel(p.botUserID, off.userID)
+	post := model.Post{
+		ChannelId: dm.Id,
+		UserId:    p.botUserID,
+	}
+
+	for _, v := range reactions {
+		if v.EmojiName == "while_check_mark" {
+			post.Message = "Izniniz onaylanmisitr. Iyi tatiller dileriz."
+		} else {
+			post.Message = "Maalesef izniniz onaylanmamistir."
+		}
+	}
+
+	_, appErr := p.API.CreatePost(&post)
+	if appErr != nil {
+		p.API.LogError(appErr.Error())
+	}
+}
+*/
+func (p *Plugin) sendOffReqToAdmin(dayOffRequest dayOff) string {
+	receiver, err := p.API.GetUserByUsername("evren")
+	if err != nil {
+		p.API.LogError(err.Error())
+	}
+	dm, _ := p.MattermostPlugin.API.GetDirectChannel(p.botUserID, receiver.Id)
+	post := model.Post{
+		ChannelId: dm.Id,
+		UserId:    p.botUserID,
+		Message:   "hello",
+		Props:     dayOffPostInit(dayOffRequest),
+	}
+
+	var appErr *model.AppError
+	_, appErr = p.API.CreatePost(&post)
+	if appErr != nil {
+		p.MattermostPlugin.API.LogError(appErr.Error())
+	}
+	return post.Id
 }
 
 func (p *Plugin) GetSiteURL() string {

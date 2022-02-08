@@ -13,6 +13,7 @@ linters-settings:
     check-shadowing: true
     enable-all: true
     disable:
+      - nilness
       - fieldalignment
   misspell:
     locale: US
