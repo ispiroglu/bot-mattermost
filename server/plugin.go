@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -19,6 +20,7 @@ type Plugin struct {
 const (
 	botUserName    = "bilisim"
 	botDisplayName = "bilisim"
+	botDesc        = "Bilisim HR bot for reporting day-offs"
 
 	// MatterpollPostType = "custom_matterpoll"
 )
@@ -28,13 +30,25 @@ func (p *Plugin) OnActivate() error {
 		p.MattermostPlugin.API.LogError("SiteURL must be set. Some features depend on it")
 	}
 
-	bot := &model.Bot{
-		Username:    botUserName,
-		DisplayName: botDisplayName,
+	botUser, err := p.API.GetUserByUsername(botUserName)
+	if err != nil {
+		bot := &model.Bot{
+			Username:    botUserName,
+			DisplayName: botDisplayName,
+			Description: botDesc,
+		}
+		botUser, appErr := p.MattermostPlugin.API.CreateBot(bot)
+		if appErr != nil {
+			return errors.Wrapf(appErr, "failed to create bot.")
+		}
+		p.botUserID = botUser.UserId
+	} else {
+		p.botUserID = botUser.Id
 	}
+
 	/*
 		{
-			x, err := p.MattermostPlugin.API.GetUserByUsername("bilisim")
+			x, err := p.MattermostPlugin.API.GetUserByUsername("bilisimm")
 			if err != nil {
 				p.MattermostPlugin.API.LogError(err.Error())
 			}
@@ -42,13 +56,8 @@ func (p *Plugin) OnActivate() error {
 			if err != nil {
 				p.MattermostPlugin.API.LogError(err.Error())
 			}
-		} */
-
-	botUserID, appErr := p.MattermostPlugin.API.CreateBot(bot)
-	if appErr != nil {
-		return errors.Wrapf(appErr, "failed to create bot.")
-	}
-	p.botUserID = botUserID.UserId
+		}
+	*/
 
 	if err := p.MattermostPlugin.API.RegisterCommand(createHelloCommand()); err != nil {
 		return errors.Wrapf(err, "failed to register command - hello command")
@@ -194,8 +203,27 @@ func (p *Plugin) sendOffReqToAdmin(dayOffRequest dayOff) string {
 	post := model.Post{
 		ChannelId: dm.Id,
 		UserId:    p.botUserID,
-		Message:   "hello",
-		Props:     dayOffPostInit(dayOffRequest),
+		Message:   "",
+		Props: map[string]interface{}{ // TODO: Iconlar yanlis
+			"attachments": []*model.SlackAttachment{
+				{
+					Text:       "Bir izin alma işlemi gerçekleşti.",
+					Color:      "#FF0000",
+					Title:      "BilisimHR",
+					TitleLink:  "https://bilisim.com.tr/",
+					AuthorName: botUserName,
+					AuthorIcon: bilisimLURL,
+					ImageURL:   bilisimURL,
+					AuthorLink: "https://bilisim.com.tr/",
+
+					Fields: []*model.SlackAttachmentField{
+						{Title: "Izin Alan Kisi", Value: dayOffRequest.name + " " + dayOffRequest.surname, Short: false},
+						{Title: "Izin Baslangic tarihi", Value: dayOffRequest.startDate.toString(), Short: true},
+						{Title: "Izin Bitis tarihi", Value: dayOffRequest.endDate.toString(), Short: true},
+					},
+				},
+			},
+		},
 	}
 
 	var appErr *model.AppError
@@ -203,6 +231,7 @@ func (p *Plugin) sendOffReqToAdmin(dayOffRequest dayOff) string {
 	if appErr != nil {
 		p.MattermostPlugin.API.LogError(appErr.Error())
 	}
+	fmt.Println(dayOffRequest.toString()) // for clearing unused toString method.
 	return post.Id
 }
 
